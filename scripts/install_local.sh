@@ -6,8 +6,9 @@
 # - Native-arch release build (faster than the universal release build).
 # - No Sparkle feed in Info.plist, so the official auto-updater never
 #   replaces this fork's build.
-# - Ad-hoc signed: macOS treats it as a new app, so Screen Recording and
-#   Accessibility must be granted again after the first install.
+# - Signed with the stable local identity from scripts/setup_signing.sh when
+#   present, so Screen Recording / Accessibility grants survive reinstalls.
+#   Falls back to ad-hoc (grants must be re-approved after every install).
 # - The previously installed app is moved to ~/.Trash, not deleted.
 set -euo pipefail
 
@@ -55,8 +56,29 @@ cat > "$STAGE/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-echo "Signing (ad-hoc)..."
-"$ROOT_DIR/scripts/sign_app.sh" "$STAGE" - >/dev/null 2>&1
+SIGN_IDENTITY="SideScreen Local Signing"
+SIGN_KEYCHAIN="$HOME/Library/Keychains/sidescreen-signing.keychain-db"
+if security find-certificate -c "$SIGN_IDENTITY" "$SIGN_KEYCHAIN" >/dev/null 2>&1; then
+    echo "Signing with '$SIGN_IDENTITY'..."
+    security unlock-keychain -p sidescreen-local "$SIGN_KEYCHAIN"
+    SIGN=(codesign --force --options runtime --timestamp=none
+          --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY")
+    SPARKLE="$STAGE/Contents/Frameworks/Sparkle.framework"
+    # Inside-out order, same as scripts/sign_app.sh.
+    "${SIGN[@]}" "$SPARKLE/Versions/B/XPCServices/Installer.xpc" 2>/dev/null
+    "${SIGN[@]}" --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc" 2>/dev/null
+    "${SIGN[@]}" "$SPARKLE/Versions/B/Autoupdate" 2>/dev/null
+    "${SIGN[@]}" "$SPARKLE/Versions/B/Updater.app" 2>/dev/null
+    "${SIGN[@]}" "$SPARKLE" 2>/dev/null
+    "${SIGN[@]}" --entitlements "$ROOT_DIR/MacHost/SideScreen.entitlements" "$STAGE" 2>/dev/null
+    codesign --verify --strict "$STAGE"
+else
+    echo "Signing ad-hoc (run scripts/setup_signing.sh once to keep permissions across installs)..."
+    "$ROOT_DIR/scripts/sign_app.sh" "$STAGE" - >/dev/null 2>&1
+fi
+NEW_REQ="$(codesign -d -r- "$STAGE" 2>/dev/null | grep designated || true)"
+OLD_REQ=""
+[ -d "$DEST" ] && OLD_REQ="$(codesign -d -r- "$DEST" 2>/dev/null | grep designated || true)"
 
 echo "Installing to $DEST..."
 pkill -x SideScreen 2>/dev/null || true
@@ -69,10 +91,17 @@ fi
 ditto "$STAGE" "$DEST"
 rm -rf "$(dirname "$STAGE")"
 
-# Old permission grants belong to the previous signature and no longer match.
-# Clear them so macOS asks again cleanly instead of showing a stale toggle.
-tccutil reset ScreenCapture com.sidescreen.app >/dev/null 2>&1 || true
-tccutil reset Accessibility com.sidescreen.app >/dev/null 2>&1 || true
+if [ "$NEW_REQ" != "$OLD_REQ" ] || [[ "$NEW_REQ" == *cdhash* ]]; then
+    # Grants belong to the previous signature and no longer match. Clear them
+    # so macOS asks again cleanly instead of showing a stale, inert toggle.
+    tccutil reset ScreenCapture com.sidescreen.app >/dev/null 2>&1 || true
+    tccutil reset Accessibility com.sidescreen.app >/dev/null 2>&1 || true
+    PERMS_RESET=1
+fi
 
 open "$DEST"
-echo "Done. Grant Screen Recording (and Accessibility for touch) when asked."
+if [ -n "${PERMS_RESET:-}" ]; then
+    echo "Done. Signature changed — grant Screen Recording (and Accessibility for touch) again."
+else
+    echo "Done. Same signature as before — existing permissions are kept."
+fi
