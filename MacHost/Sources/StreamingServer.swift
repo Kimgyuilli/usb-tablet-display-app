@@ -171,6 +171,8 @@ class StreamingServer {
     // Touch callback: (x1, y1, action, pointerCount, x2, y2)
     var onTouchEvent: ((Float, Float, Int, Int, Float, Float) -> Void)?
     var onStats: ((Double, Double) -> Void)?
+    /// Once per second: fps, Mbps, average capture→send age (ms), frames dropped in the window.
+    var onDetailedStats: ((Double, Double, Double, Int) -> Void)?
     var onKeyframeRequested: ((Bool) -> Void)?
     // Whether host wants to receive touch events from client. Ping/pong is
     // handled regardless. When false, incoming touch frames are dropped
@@ -1014,10 +1016,14 @@ class StreamingServer {
             let mbps = Double(bytesSent * 8) / elapsed / 1_000_000
             let fps = Double(frameCount) / elapsed
             onStats?(fps, mbps)
+            let avgAgeMsForStats = profiledFrameCount > 0
+                ? Double(totalFrameAgeNs) / Double(profiledFrameCount) / 1_000_000.0
+                : 0
+            onDetailedStats?(fps, mbps, avgAgeMsForStats, Int(droppedFrames))
 
             // Log pipeline latency profile
             if profiledFrameCount > 0 {
-                let avgAgeMs = Double(totalFrameAgeNs) / Double(profiledFrameCount) / 1_000_000.0
+                let avgAgeMs = avgAgeMsForStats
                 debugLog("Pipeline: \(String(format: "%.1f", fps))fps, \(String(format: "%.1f", mbps))Mbps, avg frame age: \(String(format: "%.1f", avgAgeMs))ms, dropped: \(droppedFrames)")
             }
 

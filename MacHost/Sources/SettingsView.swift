@@ -14,12 +14,13 @@ enum SettingsLayout {
 // MARK: - Pages
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general, display, streaming, input, wireless, status
+    case dashboard, general, display, streaming, input, wireless, status
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .dashboard: return "Dashboard"
         case .general: return "General"
         case .display: return "Display"
         case .streaming: return "Streaming"
@@ -31,6 +32,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .dashboard: return "gauge.with.dots.needle.67percent"
         case .general: return "gearshape.fill"
         case .display: return "display"
         case .streaming: return "dot.radiowaves.left.and.right"
@@ -43,6 +45,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     /// Tinted rounded-square icon backgrounds, System Settings style.
     var tint: Color {
         switch self {
+        case .dashboard: return .indigo
         case .general: return .gray
         case .display: return .blue
         case .streaming: return .purple
@@ -58,7 +61,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @ObservedObject var settings: DisplaySettings
     @ObservedObject var updater = AppUpdater.shared
-    @AppStorage("SideScreen_lastPage") private var page: SettingsPage = .general
+    @AppStorage("SideScreen_lastPage") private var page: SettingsPage = .dashboard
 
     var body: some View {
         HStack(spacing: 0) {
@@ -73,6 +76,12 @@ struct SettingsView: View {
         }
         .ignoresSafeArea()
         .frame(minWidth: SettingsLayout.minWidth, minHeight: SettingsLayout.minHeight)
+        .onAppear {
+            if LiveSession.demoRequested && !settings.clientConnected {
+                settings.clientConnected = true
+                LiveSession.shared.startDemo()
+            }
+        }
     }
 
     @ViewBuilder
@@ -86,6 +95,7 @@ struct SettingsView: View {
 
             Group {
                 switch page {
+                case .dashboard: DashboardPage(settings: settings)
                 case .general: GeneralPage(settings: settings, page: $page)
                 case .display: DisplayPage(settings: settings)
                 case .streaming: StreamingPage(settings: settings)
@@ -117,8 +127,12 @@ struct SettingsSidebar: View {
                 // Room for the traffic lights.
                 Color.clear.frame(height: 44)
 
-                ConnectionCard(settings: settings)
-                    .padding(.horizontal, 12)
+                Button { page = .dashboard } label: {
+                    ConnectionCard(settings: settings)
+                }
+                .buttonStyle(.plain)
+                .help("Open Dashboard")
+                .padding(.horizontal, 12)
                     .padding(.bottom, 12)
 
                 VStack(spacing: 2) {

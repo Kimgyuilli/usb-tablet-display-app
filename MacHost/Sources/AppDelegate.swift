@@ -604,12 +604,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     Task { @MainActor in
                         self.currentWirelessDevice = deviceName
                         self.settings.currentWirelessDevice = deviceName
+                        LiveSession.shared.setDeviceName(deviceName)
                         self.pairedDeviceStore.upsert(name: deviceName, lastConnected: Date())
                     }
                 }
             }
             configureDisplayGeometry(on: streamingServer, for: manager)
             streamingServer?.onPrepareForClient = { [weak self] key, name in
+                Task { @MainActor in LiveSession.shared.setDeviceName(name) }
                 guard let self = self, let key = key else { return true }
                 Task { @MainActor in await self.prepareProfile(key: key, name: name) }
                 return false
@@ -619,6 +621,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.screenCapture?.requestKeyframeOrReplayCachedFrame(force: true)
                 Task { @MainActor in
                     self.settings.clientConnected = true
+                    LiveSession.shared.clientConnected(mode: self.settings.connectionMode)
                 }
             }
             // Runs synchronously on the server's network queue BEFORE the
@@ -632,6 +635,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     clientLimitTable: self.streamingServer?.clientDecodeLimitTable
                 )
                 let enc = capture.encodeSize(for: codec)
+                let limit = self.streamingServer?.clientDecodeLimits
+                Task { @MainActor in
+                    LiveSession.shared.codecNegotiated(codec, encodeSize: enc, decoderLimit: limit)
+                }
                 // Whatever the codec negotiation settled on, this is what the
                 // stream's SPS will carry, so it is what the client must size
                 // its decoder for.
@@ -647,6 +654,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self else { return }
                 Task { @MainActor in
                     self.settings.clientConnected = false
+                    LiveSession.shared.clientDisconnected()
                     self.closeActiveProfile()
                     // Final lastConnected snapshot at the disconnect moment, then
                     // freeze (currentWirelessDevice = nil stops the rolling update
@@ -661,6 +669,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             streamingServer?.onTouchEvent = { [weak self] x, y, action, pointerCount, x2, y2 in
                 self?.handleTouch(x: x, y: y, action: action, pointerCount: pointerCount, x2: x2, y2: y2)
+            }
+
+            streamingServer?.onDetailedStats = { fps, mbps, latencyMs, dropped in
+                Task { @MainActor in
+                    LiveSession.shared.addSample(fps: fps, mbps: mbps, latencyMs: latencyMs, dropped: dropped)
+                }
             }
 
             streamingServer?.onStats = { [weak self] fps, mbps in
@@ -915,6 +929,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func stopServer() {
         tearDownServerResources(saveDisplayPosition: true)
+        Task { @MainActor in LiveSession.shared.clientDisconnected() }
         syncCurrentProfile()
         activeProfileKey = nil
 
