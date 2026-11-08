@@ -1,3 +1,7 @@
+> **Fork notice** — This is a personal fork of [Side Screen](https://github.com/tranvuongquocdat/SideScreen) by Tran Vuong Quoc Dat (MIT), based on v1.1.1.
+> Changes in this fork: a redesigned macOS settings window (sidebar layout), a live Dashboard with tablet info and performance metrics, and local build/sign scripts (`scripts/setup_signing.sh`, `scripts/install_local.sh`).
+> For official releases and support, use the upstream project.
+
 <a id="readme-top"></a>
 
 <div align="center">
