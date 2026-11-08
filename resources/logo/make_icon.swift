@@ -1,20 +1,19 @@
 // Renders the Side Screen app icon (1024×1024 PNG) with SwiftUI.
 //
-//   swift resources/logo/make_icon.swift <output.png>
+//   swift resources/logo/make_icon.swift <variant> <output.png>
+//   swift resources/logo/make_icon.swift sheet <output.png>   # side-by-side comparison
 //
-// Concept: a MacBook and a tablet side by side, with one wallpaper flowing
-// continuously across both screens — the "extended display" idea.
+// Flat, geometric: a laptop screen and a tablet as plain shapes. No glows.
 import AppKit
 import SwiftUI
 
 let canvas: CGFloat = 1024
-
-// Geometry (Apple macOS icon grid: 824pt body inset 100pt).
 let bodyRect = CGRect(x: 100, y: 100, width: 824, height: 824)
-let macScreen = CGRect(x: 176, y: 330, width: 492, height: 330)
-let tablet = CGRect(x: 690, y: 362, width: 200, height: 298)
-let tabletBezel: CGFloat = 12
-let bezel: CGFloat = 16
+
+// Glyph geometry (shared by all variants)
+let screen = CGRect(x: 200, y: 344, width: 440, height: 296)
+let base = CGRect(x: 172, y: 658, width: 496, height: 24)
+let tablet = CGRect(x: 678, y: 372, width: 178, height: 268)
 
 extension Color {
     init(hex: UInt32) {
@@ -24,146 +23,122 @@ extension Color {
     }
 }
 
-/// One wallpaper spanning the whole device area; masked by both screens.
-struct Wallpaper: View {
+enum Variant: String, CaseIterable {
+    case light, blue, dark
+}
+
+struct Placed<S: View>: View {
+    let rect: CGRect
+    let content: S
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(hex: 0x30357A), Color(hex: 0x3A2C86)],
-                           startPoint: .top, endPoint: .bottom)
-            // Aurora blobs
-            Ellipse()
-                .fill(Color(hex: 0xFF5E8A))
-                .frame(width: 520, height: 260)
-                .offset(x: -120, y: 90)
-                .blur(radius: 70)
-            Ellipse()
-                .fill(Color(hex: 0xFFB457))
-                .frame(width: 360, height: 200)
-                .offset(x: -230, y: 150)
-                .blur(radius: 60)
-            Ellipse()
-                .fill(Color(hex: 0x5AC8FA))
-                .frame(width: 520, height: 240)
-                .offset(x: 230, y: -40)
-                .blur(radius: 70)
-            Ellipse()
-                .fill(Color(hex: 0x8E7CFF))
-                .frame(width: 420, height: 220)
-                .offset(x: 40, y: -110)
-                .blur(radius: 70)
-            // Light ribbon sweeping from the Mac onto the tablet
-            Capsule()
-                .fill(LinearGradient(colors: [.white.opacity(0), .white.opacity(0.85), .white.opacity(0)],
-                                     startPoint: .leading, endPoint: .trailing))
-                .frame(width: 900, height: 26)
-                .rotationEffect(.degrees(-14))
-                .offset(x: 30, y: 30)
-                .blur(radius: 6)
-        }
-        .frame(width: 760, height: 380)
+        content.frame(width: rect.width, height: rect.height).offset(x: rect.minX, y: rect.minY)
     }
 }
 
 struct Icon: View {
+    let variant: Variant
+
+    private var background: [Color] {
+        switch variant {
+        case .light: return [Color(hex: 0xFFFFFF), Color(hex: 0xEEF0F4)]
+        case .blue: return [Color(hex: 0x3B7BF6), Color(hex: 0x2459DB)]
+        case .dark: return [Color(hex: 0x23252C), Color(hex: 0x131418)]
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear.frame(width: canvas, height: canvas)
 
-            // Body
-            RoundedRectangle(cornerRadius: 186, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0x4F8BFF), Color(hex: 0x5B5CF0), Color(hex: 0x7B3FE4)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay {
-                    // Soft top sheen
-                    RoundedRectangle(cornerRadius: 186, style: .continuous)
-                        .fill(LinearGradient(colors: [.white.opacity(0.28), .white.opacity(0)],
-                                             startPoint: .top, endPoint: .center))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 186, style: .continuous)
-                        .strokeBorder(.white.opacity(0.18), lineWidth: 3)
-                }
-                .frame(width: bodyRect.width, height: bodyRect.height)
-                .shadow(color: .black.opacity(0.28), radius: 14, y: 12)
-                .offset(x: bodyRect.minX, y: bodyRect.minY)
-
-            // Laptop base
-            UnevenRoundedBase()
-                .fill(LinearGradient(colors: [Color(hex: 0xF4F5FA), Color(hex: 0xB8BCCB)],
-                                     startPoint: .top, endPoint: .bottom))
-                .frame(width: macScreen.width + 64, height: 30)
-                .shadow(color: .black.opacity(0.25), radius: 10, y: 8)
-                .offset(x: macScreen.minX - 32, y: macScreen.maxY - 2)
-            Capsule()
-                .fill(Color(hex: 0x8C90A3))
-                .frame(width: 96, height: 8)
-                .offset(x: macScreen.midX - 48, y: macScreen.maxY)
-
-            // Device bezels
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(Color(hex: 0x14151C))
-                .frame(width: macScreen.width, height: macScreen.height)
-                .shadow(color: .black.opacity(0.3), radius: 16, y: 10)
-                .offset(x: macScreen.minX, y: macScreen.minY)
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color(hex: 0x14151C))
-                .frame(width: tablet.width, height: tablet.height)
-                .shadow(color: .black.opacity(0.3), radius: 16, y: 10)
-                .offset(x: tablet.minX, y: tablet.minY)
-
-            // Continuous wallpaper across both screens
-            Wallpaper()
-                .offset(x: macScreen.minX + bezel, y: macScreen.minY + bezel)
-                .mask(alignment: .topLeading) {
-                    ZStack(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .frame(width: macScreen.width - 2 * bezel, height: macScreen.height - 2 * bezel)
-                            .offset(x: macScreen.minX + bezel, y: macScreen.minY + bezel)
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .frame(width: tablet.width - 2 * tabletBezel, height: tablet.height - 2 * tabletBezel)
-                            .offset(x: tablet.minX + tabletBezel, y: tablet.minY + tabletBezel)
+            Placed(rect: bodyRect, content:
+                RoundedRectangle(cornerRadius: 186, style: .continuous)
+                    .fill(LinearGradient(colors: background, startPoint: .top, endPoint: .bottom))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 186, style: .continuous)
+                            .strokeBorder(Color.black.opacity(variant == .light ? 0.07 : 0), lineWidth: 2)
                     }
-                    .frame(width: canvas, height: canvas, alignment: .topLeading)
-                }
-                .frame(width: canvas, height: canvas, alignment: .topLeading)
+                    .shadow(color: .black.opacity(0.18), radius: 12, y: 10)
+            )
 
-            // Camera notch on the Mac
-            Capsule()
-                .fill(Color(hex: 0x14151C))
-                .frame(width: 64, height: 12)
-                .offset(x: macScreen.midX - 32, y: macScreen.minY + bezel - 1)
+            glyph
         }
         .frame(width: canvas, height: canvas, alignment: .topLeading)
     }
+
+    @ViewBuilder private var glyph: some View {
+        switch variant {
+        case .light:
+            // Ink laptop, blue tablet.
+            let ink = Color(hex: 0x1D2029)
+            Placed(rect: screen, content: RoundedRectangle(cornerRadius: 34, style: .continuous).fill(ink))
+            Placed(rect: base, content: Capsule().fill(ink))
+            Placed(rect: tablet, content: RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Color(hex: 0x2F74F5)))
+        case .blue:
+            // White outline laptop, solid white tablet — "the extra screen".
+            Placed(rect: screen, content: RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .strokeBorder(.white, lineWidth: 30))
+            Placed(rect: base, content: Capsule().fill(.white))
+            Placed(rect: tablet, content: RoundedRectangle(cornerRadius: 32, style: .continuous).fill(.white))
+        case .dark:
+            // Soft white laptop, accent tablet.
+            Placed(rect: screen, content: RoundedRectangle(cornerRadius: 34, style: .continuous).fill(Color(hex: 0xF2F3F6)))
+            Placed(rect: base, content: Capsule().fill(Color(hex: 0xF2F3F6)))
+            Placed(rect: tablet, content: RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Color(hex: 0x4C8DFF)))
+        }
+    }
 }
 
-/// Laptop base: flat top, rounded bottom corners.
-struct UnevenRoundedBase: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        let rad: CGFloat = 14
-        p.move(to: CGPoint(x: r.minX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - rad))
-        p.addQuadCurve(to: CGPoint(x: r.maxX - rad * 1.6, y: r.maxY), control: CGPoint(x: r.maxX, y: r.maxY))
-        p.addLine(to: CGPoint(x: r.minX + rad * 1.6, y: r.maxY))
-        p.addQuadCurve(to: CGPoint(x: r.minX, y: r.maxY - rad), control: CGPoint(x: r.minX, y: r.maxY))
-        p.closeSubpath()
-        return p
+struct Sheet: View {
+    var body: some View {
+        VStack(spacing: 40) {
+            HStack(spacing: 60) {
+                ForEach(Variant.allCases, id: \.self) { v in
+                    VStack(spacing: 16) {
+                        Icon(variant: v).scaleEffect(0.5).frame(width: 512, height: 512)
+                        Text(v.rawValue.uppercased())
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(.black.opacity(0.6))
+                    }
+                }
+            }
+            HStack(spacing: 60) {
+                ForEach(Variant.allCases, id: \.self) { v in
+                    HStack(spacing: 24) {
+                        Icon(variant: v).scaleEffect(128 / 1024).frame(width: 128, height: 128)
+                        Icon(variant: v).scaleEffect(64 / 1024).frame(width: 64, height: 64)
+                        Icon(variant: v).scaleEffect(32 / 1024).frame(width: 32, height: 32)
+                    }
+                    .frame(width: 512)
+                }
+            }
+        }
+        .padding(60)
+        .background(Color(hex: 0xE4E5EA))
     }
 }
 
 @MainActor
-func render(to path: String) {
-    let renderer = ImageRenderer(content: Icon())
+func write<V: View>(_ view: V, to path: String) {
+    let renderer = ImageRenderer(content: view)
     renderer.scale = 1
     renderer.isOpaque = false
-    guard let cg = renderer.cgImage else { fatalError("render failed") }
-    let rep = NSBitmapImageRep(cgImage: cg)
-    guard let png = rep.representation(using: .png, properties: [:]) else { fatalError("png failed") }
+    guard let cg = renderer.cgImage,
+          let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else {
+        fatalError("render failed")
+    }
     try! png.write(to: URL(fileURLWithPath: path))
     print("wrote \(path) \(cg.width)x\(cg.height)")
 }
 
-let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon-1024.png"
-MainActor.assumeIsolated { render(to: out) }
+let args = CommandLine.arguments
+let which = args.count > 1 ? args[1] : "light"
+let out = args.count > 2 ? args[2] : "icon-\(which).png"
+MainActor.assumeIsolated {
+    if which == "sheet" {
+        write(Sheet(), to: out)
+    } else if let v = Variant(rawValue: which) {
+        write(Icon(variant: v), to: out)
+    } else {
+        fatalError("unknown variant \(which)")
+    }
+}
