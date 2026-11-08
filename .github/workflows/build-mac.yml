@@ -1,0 +1,25 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Universal Binary)
+        run: |
+          cd MacHost
+          swift build -c release --arch arm64 --arch x86_64
+          lipo -archs "$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SideScreen"
+
+      - name: Lint
+        run: |
+          brew install swiftlint
+          cd MacHost
+          swiftlint lint --config .swiftlint.yml --strict
