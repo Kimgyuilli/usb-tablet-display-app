@@ -382,6 +382,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupSettingsWindow() {
         settingsWindow = SettingsWindowController(settings: settings)
 
+        settings.onArrange = { [weak self] side in self?.arrange(side) }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Picks up drags in System Settings and our own moves alike.
+            guard let self, let side = self.virtualDisplayManager?.currentSide() else { return }
+            if self.settings.displaySide != side { self.settings.displaySide = side }
+        }
+
         settings.onToggleServer = { [weak self] in
             guard let self else { return }
             if self.settings.isRunning {
@@ -715,6 +726,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Create the virtual display from the current settings, in extend mode.
+    /// Put the tablet on `side` of the Mac's screen — now if streaming,
+    /// otherwise as soon as the next display is created.
+    private func arrange(_ side: DisplaySide) {
+        if let manager = virtualDisplayManager, manager.isActive {
+            do {
+                try manager.place(side)
+                settings.displaySide = manager.currentSide() ?? side
+                debugLog("📍 Tablet placed \(side.phrase) the Mac")
+            } catch {
+                debugLog("⚠️  Could not place tablet \(side.rawValue): \(error)")
+            }
+        } else {
+            UserDefaults.standard.set(side.rawValue, forKey: "SideScreen_pendingSide")
+            settings.displaySide = side
+        }
+    }
+
     private func createVirtualDisplay(on manager: VirtualDisplayManager) throws {
         let size = settings.resolutionSize
         try manager.createDisplay(

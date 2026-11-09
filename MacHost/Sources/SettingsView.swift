@@ -444,6 +444,110 @@ struct StatusRow: View {
     }
 }
 
+/// Mini display arrangement: the Mac in the middle, a clickable spot for the
+/// tablet on each side.
+struct ArrangementPicker: View {
+    let selection: DisplaySide?
+    let tabletAspect: CGFloat
+    let onSelect: (DisplaySide) -> Void
+
+    private let mac = CGSize(width: 132, height: 84)
+    private let gap: CGFloat = 10
+
+    private var slot: CGSize {
+        let h: CGFloat = 46
+        return CGSize(width: min(max(h * tabletAspect, 34), 82), height: h)
+    }
+
+    var body: some View {
+        let s = slot
+        let w = mac.width + 2 * (s.width + gap)
+        let h = mac.height + 2 * (s.height + gap)
+        ZStack {
+            MacGlyph()
+                .frame(width: mac.width, height: mac.height)
+                .position(x: w / 2, y: h / 2)
+            ForEach(DisplaySide.allCases, id: \.self) { side in
+                ArrangementSlot(side: side, isSelected: selection == side) { onSelect(side) }
+                    .frame(width: s.width, height: s.height)
+                    .position(center(of: side, slot: s, width: w, height: h))
+            }
+        }
+        .frame(width: w, height: h)
+        .animation(.easeInOut(duration: 0.2), value: selection)
+    }
+
+    private func center(of side: DisplaySide, slot s: CGSize, width w: CGFloat, height h: CGFloat) -> CGPoint {
+        switch side {
+        case .left: return CGPoint(x: s.width / 2, y: h / 2)
+        case .right: return CGPoint(x: w - s.width / 2, y: h / 2)
+        case .above: return CGPoint(x: w / 2, y: s.height / 2)
+        case .below: return CGPoint(x: w / 2, y: h - s.height / 2)
+        }
+    }
+}
+
+private struct MacGlyph: View {
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        shape
+            .fill(Color.primary.opacity(0.06))
+            .overlay(alignment: .top) {
+                // Menu bar: this is the main screen.
+                Rectangle()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(height: 9)
+            }
+            .overlay {
+                VStack(spacing: 3) {
+                    Image(systemName: "laptopcomputer")
+                        .font(.system(size: 20, weight: .regular))
+                    Text("Mac")
+                        .font(.caption.weight(.medium))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.top, 6)
+            }
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+    }
+}
+
+private struct ArrangementSlot: View {
+    let side: DisplaySide
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        Button(action: action) {
+            shape
+                .fill(isSelected ? Color.accentColor
+                      : Color.accentColor.opacity(hovering ? 0.12 : 0))
+                .overlay {
+                    if !isSelected {
+                        shape.strokeBorder(Color.secondary.opacity(hovering ? 0.7 : 0.35),
+                                           style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    }
+                }
+                .overlay {
+                    Image(systemName: isSelected ? "ipad.landscape" : "plus")
+                        .font(.system(size: isSelected ? 17 : 12, weight: .semibold))
+                        .foregroundStyle(isSelected ? AnyShapeStyle(.white)
+                                         : AnyShapeStyle(hovering ? Color.accentColor : Color.secondary))
+                }
+                .shadow(color: .accentColor.opacity(isSelected ? 0.3 : 0), radius: 4, y: 2)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Place the tablet \(side.phrase) your Mac")
+        .accessibilityLabel("Tablet \(side.phrase) Mac")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
 enum SystemSettingsLink {
     static func open(_ url: String) {
         if let url = URL(string: url) { NSWorkspace.shared.open(url) }
@@ -610,6 +714,34 @@ struct DisplayPage: View {
                 }
             }
 
+            Section {
+                VStack(spacing: 12) {
+                    ArrangementPicker(selection: settings.displaySide,
+                                      tabletAspect: tabletAspect) { side in
+                        settings.onArrange?(side)
+                    }
+                    Text(settings.displaySide.map { "Tablet sits \($0.phrase) your Mac" }
+                         ?? "Click where the tablet should sit")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+
+                LabeledContent {
+                    Button("Open Display Settings…") { SystemSettingsLink.open(SystemSettingsLink.displays) }
+                } label: {
+                    RowLabel(title: "Fine-tune",
+                             detail: "Drag to an exact spot or line up edges in System Settings.")
+                }
+            } header: {
+                Text("Position")
+            } footer: {
+                if !settings.isRunning {
+                    Text("Applied when streaming starts.")
+                }
+            }
+
             Section("Orientation") {
                 Picker("Rotation", selection: $settings.rotation) {
                     Text("0°").tag(0)
@@ -622,12 +754,6 @@ struct DisplayPage: View {
                 Toggle("Flip horizontally", isOn: $settings.flipHorizontal)
                 Toggle("Flip vertically", isOn: $settings.flipVertical)
 
-                LabeledContent {
-                    Button("Arrange Displays…") { SystemSettingsLink.open(SystemSettingsLink.displays) }
-                } label: {
-                    RowLabel(title: "Arrangement",
-                             detail: "Place the tablet left or right of your Mac in System Settings.")
-                }
             }
 
             Section {
@@ -670,6 +796,12 @@ struct DisplayPage: View {
             customWidthText = String(settings.customWidth)
             customHeightText = String(settings.customHeight)
         }
+    }
+
+    private var tabletAspect: CGFloat {
+        let size = settings.resolutionSize
+        guard size.height > 0 else { return 1.6 }
+        return CGFloat(size.width) / CGFloat(size.height)
     }
 
     private func pretty(_ res: String) -> String {

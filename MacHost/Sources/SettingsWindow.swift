@@ -86,7 +86,12 @@ class DisplaySettings: ObservableObject {
     @Published var currentBitrate: Double = 0
     @Published var captureMethod: String = "Initializing..."
 
+    /// Edge of the Mac's screen the tablet sits against: the live arrangement
+    /// while streaming, otherwise the last known (or pending) choice.
+    @Published var displaySide: DisplaySide?
+
     var onToggleServer: (() -> Void)?
+    var onArrange: ((DisplaySide) -> Void)?
 
     init() {
         self.resolution = defaults.string(forKey: keyPrefix + "resolution") ?? "1920x1200"
@@ -110,6 +115,9 @@ class DisplaySettings: ObservableObject {
         self.autoStartStreamingOnLaunch = defaults.object(forKey: keyPrefix + "autoStartStreamingOnLaunch") as? Bool ?? false
         let startupRaw = defaults.string(forKey: keyPrefix + "startupMode") ?? modeRaw
         self.startupMode = ConnectionMode(rawValue: startupRaw) ?? .usb
+
+        self.displaySide = (defaults.string(forKey: keyPrefix + "pendingSide")
+            ?? defaults.string(forKey: keyPrefix + "side")).flatMap(DisplaySide.init(rawValue:))
 
         print("Loaded settings: \(resolution) @ \(refreshRate)Hz, bitrate=\(bitrate), quality=\(quality)")
     }

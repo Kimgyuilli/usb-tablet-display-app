@@ -3,6 +3,42 @@ import AppKit
 import CoreGraphics
 import CGVirtualDisplayBridge
 
+/// Which edge of the Mac's main screen the tablet's display sits against.
+enum DisplaySide: String, CaseIterable {
+    case left, above, right, below
+
+    /// "The tablet sits … your Mac."
+    var phrase: String {
+        switch self {
+        case .left: return "to the left of"
+        case .above: return "above"
+        case .right: return "to the right of"
+        case .below: return "below"
+        }
+    }
+
+    /// Top-left of a display of `size` placed against `anchor` on this side,
+    /// centred along the shared edge. Global display coordinates (y down).
+    func origin(for size: CGSize, against anchor: CGRect) -> CGPoint {
+        let p: CGPoint
+        switch self {
+        case .left: p = CGPoint(x: anchor.minX - size.width, y: anchor.midY - size.height / 2)
+        case .right: p = CGPoint(x: anchor.maxX, y: anchor.midY - size.height / 2)
+        case .above: p = CGPoint(x: anchor.midX - size.width / 2, y: anchor.minY - size.height)
+        case .below: p = CGPoint(x: anchor.midX - size.width / 2, y: anchor.maxY)
+        }
+        return CGPoint(x: p.x.rounded(), y: p.y.rounded())
+    }
+
+    /// The side of `anchor` that `rect` mostly lies on.
+    static func of(_ rect: CGRect, relativeTo anchor: CGRect) -> DisplaySide {
+        let dx = (rect.midX - anchor.midX) / ((anchor.width + rect.width) / 2)
+        let dy = (rect.midY - anchor.midY) / ((anchor.height + rect.height) / 2)
+        if abs(dx) >= abs(dy) { return dx < 0 ? .left : .right }
+        return dy < 0 ? .above : .below
+    }
+}
+
 /// Manages virtual display creation and lifecycle using CGVirtualDisplay API
 class VirtualDisplayManager {
     private var virtualDisplay: CGVirtualDisplay?
@@ -267,6 +303,9 @@ class VirtualDisplayManager {
         defaults.set(Int(position.x), forKey: "SideScreen_positionX")
         defaults.set(Int(position.y), forKey: "SideScreen_positionY")
         defaults.set(true, forKey: "SideScreen_hasPosition")
+        if let side = currentSide() {
+            defaults.set(side.rawValue, forKey: "SideScreen_side")
+        }
         print("💾 Saved display position: (\(Int(position.x)), \(Int(position.y)))")
     }
 
@@ -278,6 +317,20 @@ class VirtualDisplayManager {
         defer { ensurePhysicalDisplayStaysMain() }
 
         let defaults = UserDefaults.standard
+
+        // A side picked in Settings while nothing was streaming wins over the
+        // remembered coordinates (the display's size is only known now).
+        if let raw = defaults.string(forKey: "SideScreen_pendingSide"),
+           let side = DisplaySide(rawValue: raw) {
+            defaults.removeObject(forKey: "SideScreen_pendingSide")
+            do {
+                try place(side)
+                return
+            } catch {
+                print("⚠️  Failed to apply pending side \(raw): \(error)")
+            }
+        }
+
         guard defaults.bool(forKey: "SideScreen_hasPosition") else {
             print("📍 No saved display position found")
             return
@@ -301,6 +354,31 @@ class VirtualDisplayManager {
         } catch {
             print("⚠️  Failed to restore display position: \(error)")
         }
+    }
+
+    /// The physical display the tablet is arranged against: the main one,
+    /// unless the virtual display has (wrongly) become main.
+    private func anchorDisplay() -> CGDirectDisplayID? {
+        let main = CGMainDisplayID()
+        if main != displayID { return main }
+        return onlinePhysicalDisplays().first
+    }
+
+    /// Which side of the Mac's screen the tablet currently sits on.
+    func currentSide() -> DisplaySide? {
+        guard let displayID = displayID, let anchor = anchorDisplay() else { return nil }
+        return DisplaySide.of(CGDisplayBounds(displayID), relativeTo: CGDisplayBounds(anchor))
+    }
+
+    /// Move the tablet against `side` of the Mac's screen and remember it.
+    func place(_ side: DisplaySide) throws {
+        guard let displayID = displayID else { throw VirtualDisplayError.displayNotCreated }
+        guard let anchor = anchorDisplay() else {
+            throw VirtualDisplayError.configurationFailed("No physical display to arrange against")
+        }
+        let origin = side.origin(for: CGDisplayBounds(displayID).size, against: CGDisplayBounds(anchor))
+        try setDisplayPosition(x: Int32(origin.x), y: Int32(origin.y))
+        saveDisplayPosition()
     }
 
     /// Online displays other than this virtual display. Filters by the vendor
